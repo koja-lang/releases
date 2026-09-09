@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Builds the release catalog that GitHub Pages serves.
+#
+#   bin/generate VERSION DIST_DIR   Record one release from its build
+#                                   artifacts, then rebuild the catalog.
+#   bin/generate                    Rebuild the catalog from releases/.
+#
+# The two-argument form is the contract the koja release workflow
+# depends on. Keep it stable. DIST_DIR holds the release tarballs
+# named koja-v<VERSION>-<platform>.tar.gz and a .sha256 sidecar for
+# each one, as written by `shasum -a 256`.
+#
+# Everything under the repository root except bin/, test/, README.md,
+# LICENSE, CNAME, and .nojekyll is output of this script.
+
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+downloads="https://github.com/koja-lang/koja/releases/download"
+
+fail() {
+  echo "generate: $*" >&2
+  exit 1
+}
+
+# Writes releases/VERSION.json from the tarballs in DIST_DIR.
+record_release() {
+  local version="$1" dist="$2"
+  local tarball name platform sha256 size files
+
+  [ -d "$dist" ] || fail "no such directory: $dist"
+
+  files="$(
+    for tarball in "$dist"/koja-v"$version"-*.tar.gz; do
+      [ -f "$tarball" ] || fail "no tarballs for $version in $dist"
+      [ -f "$tarball.sha256" ] || fail "missing checksum: $tarball.sha256"
+      name="$(basename "$tarball")"
+      platform="${name#koja-v"$version"-}"
+      platform="${platform%.tar.gz}"
+      sha256="$(awk '{ print $1 }' "$tarball.sha256")"
+      size="$(wc -c <"$tarball" | tr -d ' ')"
+      jq -n \
+        --arg platform "$platform" \
+        --arg url "$downloads/v$version/$name" \
+        --arg sha256 "$sha256" \
+        --argjson size "$size" \
+        '{ ($platform): { url: $url, sha256: $sha256, size: $size } }'
+    done | jq -s 'add'
+  )"
+
+  jq -S -n \
+    --arg version "$version" \
+    --arg date "$(date -u +%F)" \
+    --argjson files "$files" \
+    '{ version: $version, date: $date, files: $files }' \
+    >"$root/releases/$version.json"
+}
+
+# Lists recorded versions oldest first, one per line. Pass r for
+# newest first.
+versions() {
+  local order="${1:-}"
+  find "$root/releases" -name '*.json' -exec basename {} .json \; |
+    sort -t. -k1,1n"$order" -k2,2n"$order" -k3,3n"$order"
+}
+
+# Rebuilds every derived file from releases/*.json.
+rebuild() {
+  local newest oldest_first version
+
+  oldest_first="$(versions)"
+  [ -n "$oldest_first" ] || fail "no release records in $root/releases"
+  newest="$(versions r | head -n 1)"
+
+  versions r | sed "s|.*|$root/releases/&.json|" | xargs jq -s '.' >"$root/index.json"
+  cp "$root/releases/$newest.json" "$root/latest.json"
+  echo "$newest" >"$root/latest"
+  echo "$oldest_first" >"$root/versions"
+
+  # Oldest first, so the newest release in each line writes last.
+  rm -rf "$root/resolve"
+  mkdir -p "$root/resolve"
+  while read -r version; do
+    echo "$version" >"$root/resolve/$version"
+    echo "$version" >"$root/resolve/${version%.*}"
+    echo "$version" >"$root/resolve/${version%%.*}"
+  done <<<"$oldest_first"
+}
+
+case "$#" in
+  0)
+    rebuild
+    ;;
+  2)
+    record_release "$1" "$2"
+    rebuild
+    echo "Recorded koja $1"
+    ;;
+  *)
+    fail "usage: bin/generate [VERSION DIST_DIR]"
+    ;;
+esac

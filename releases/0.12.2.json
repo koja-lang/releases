@@ -1,0 +1,16 @@
+{
+  "date": "2026-06-18",
+  "files": {
+    "darwin-arm64": {
+      "sha256": "a9899ca9495752e44f01361791e6587d71cd8bddb638c1bef60c7600ba8b399c",
+      "size": 32968069,
+      "url": "https://github.com/koja-lang/koja/releases/download/v0.12.2/koja-v0.12.2-darwin-arm64.tar.gz"
+    },
+    "linux-x86_64": {
+      "sha256": "4b9f5dc48208ab62e5aeca5677479184b59fa78ed0191f3ee581a509fce8f9d6",
+      "size": 43184598,
+      "url": "https://github.com/koja-lang/koja/releases/download/v0.12.2/koja-v0.12.2-linux-x86_64.tar.gz"
+    }
+  },
+  "version": "0.12.2"
+}

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Seeds releases/ from the GitHub releases of koja-lang/koja, then
+# rebuilds the catalog. Run once when the catalog is created, or again
+# to repair a record. Releases with no tarballs are skipped, so the
+# source-only releases before 0.12.1 never appear.
+#
+# Needs the gh CLI signed in and jq.
+
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+records="$(
+  # shellcheck disable=SC2016 # jq variables, not shell variables
+  gh api --paginate 'repos/koja-lang/koja/releases?per_page=100' --jq '
+    .[]
+    | select((.draft or .prerelease) | not)
+    | (.tag_name | ltrimstr("v")) as $version
+    | [.assets[] | select(.name | test("^koja-v.*\\.tar\\.gz$"))] as $tarballs
+    | select(($tarballs | length) > 0)
+    | {
+        version: $version,
+        date: .published_at[:10],
+        files: (
+          $tarballs
+          | map({
+              key: (.name | ltrimstr("koja-v\($version)-") | rtrimstr(".tar.gz")),
+              value: {
+                url: .browser_download_url,
+                sha256: (.digest | ltrimstr("sha256:")),
+                size: .size
+              }
+            })
+          | from_entries
+        )
+      }
+    | @json'
+)"
+
+count=0
+while read -r record; do
+  version="$(jq -r '.version' <<<"$record")"
+  jq -S '.' <<<"$record" >"$root/releases/$version.json"
+  count=$((count + 1))
+done <<<"$records"
+
+"$root/bin/generate"
+echo "Backfilled $count releases"

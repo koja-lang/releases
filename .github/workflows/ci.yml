@@ -1,0 +1,27 @@
+name: CI
+
+# Lint and test the generator. Publishing needs no workflow: GitHub
+# Pages serves the main branch, and the koja release workflow pushes
+# to it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: shellcheck
+        run: shellcheck bin/* test/*.sh
+      - name: Generator smoke test
+        run: test/generate_test.sh
+      - name: Catalog matches its records
+        run: |
+          bin/generate
+          git diff --exit-code
